@@ -86,79 +86,94 @@ def upsert_trial_vector(session, trial_id, text):
     session.execute(stmt)
     session.commit()
 
-# Function to fetch, process, and upsert clinical trials directly
-def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/api/v2/studies", status="RECRUITING"):
-    page_count = 0  # Track page count
+# Function to check and remove non-recruiting trials
+def manage_trial_entry(session, trial_data: ClinicalTrialCreate):
+    # Check if the trial already exists
+    existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
+    
+    if existing_trial:
+        # If it exists and is recruiting, update it
+        if trial_data.status == "RECRUITING":
+            trial_id = upsert_clinical_trial(session, trial_data)
+            upsert_trial_vector(session, trial_id, trial_data.description)
+        # If it exists but is not recruiting, delete from both tables
+        else:
+            session.query(TrialVector).filter_by(trial_id=existing_trial.trial_id).delete()
+            session.delete(existing_trial)
+            session.commit()
+    else:
+        # If it doesn’t exist and is recruiting, add it
+        if trial_data.status == "RECRUITING":
+            trial_id = upsert_clinical_trial(session, trial_data)
+            upsert_trial_vector(session, trial_id, trial_data.description)
+
+# Updated function to fetch, process, and manage clinical trials
+def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/api/v2/studies"):
+    page_count = 0
     with tqdm(desc="Fetching pages", unit="page") as page_bar:
         while url:
             page_count += 1
             page_bar.set_postfix({"Page": page_count})
-            
+
             try:
                 response = http.get(url)
-                response.raise_for_status()  # Check for HTTP errors
+                response.raise_for_status()
                 data = response.json()
                 studies = data.get('studies', [])
-                
+
                 with tqdm(total=len(studies), desc=f"Processing trials in page {page_count}", unit="trial") as trial_bar:
                     for s in studies:
                         status_obj = s.get('protocolSection', {}).get('statusModule', {})
                         overall_status = status_obj.get('overallStatus')
-                        if status == overall_status:
-                            protocol_section = s.get('protocolSection', {})
-                            identification_module = protocol_section.get('identificationModule', {})
-                            description_module = protocol_section.get('descriptionModule', {})
-                            eligibility_module = protocol_section.get('eligibilityModule', {})
-                            locations_module = protocol_section.get('contactsLocationsModule', {})
-                            
-                            # Build trial data dictionary
-                            trial_data = ClinicalTrialCreate(
-                                trial_id=identification_module.get('nctId'),
-                                organization=identification_module.get('organization', {}).get('fullName'),
-                                brief_title=identification_module.get('briefTitle'),
-                                official_title=identification_module.get('officialTitle'),
-                                description=description_module.get('briefSummary'),
-                                start_date=status_obj.get('startDateStruct', {}).get('date'),
-                                primary_completion_date=status_obj.get('primaryCompletionDateStruct', {}).get('date'),
-                                completion_date=status_obj.get('completionDateStruct', {}).get('date'),
-                                eligibility_criteria=eligibility_module.get('eligibilityCriteria'),
-                                minimum_age=eligibility_module.get('minimumAge'),
-                                maximum_age=eligibility_module.get('maximumAge'),
-                                sex=eligibility_module.get('sex'),
-                                healthy_volunteers=eligibility_module.get('healthyVolunteers'),
-                                locations=[
-                                    {
-                                        "facility": loc.get('facility'),
-                                        "city": loc.get('city'),
-                                        "state": loc.get('state'),
-                                        "country": loc.get('country'),
-                                        "zip": loc.get('zip'),
-                                    }
-                                    for loc in locations_module.get('locations', [])
-                                ]
-                            )
-
-                            # Upsert clinical trial and get the trial ID
-                            trial_id = upsert_clinical_trial(session, trial_data)
-
-                            # Upsert vector for trial based on description
-                            upsert_trial_vector(session, trial_id, trial_data.description)
                         
-                        # Update progress on the trial processing bar
+                        protocol_section = s.get('protocolSection', {})
+                        identification_module = protocol_section.get('identificationModule', {})
+                        description_module = protocol_section.get('descriptionModule', {})
+                        eligibility_module = protocol_section.get('eligibilityModule', {})
+                        locations_module = protocol_section.get('contactsLocationsModule', {})
+
+                        trial_data = ClinicalTrialCreate(
+                            trial_id=identification_module.get('nctId'),
+                            organization=identification_module.get('organization', {}).get('fullName'),
+                            brief_title=identification_module.get('briefTitle'),
+                            official_title=identification_module.get('officialTitle'),
+                            description=description_module.get('briefSummary'),
+                            start_date=status_obj.get('startDateStruct', {}).get('date'),
+                            primary_completion_date=status_obj.get('primaryCompletionDateStruct', {}).get('date'),
+                            completion_date=status_obj.get('completionDateStruct', {}).get('date'),
+                            eligibility_criteria=eligibility_module.get('eligibilityCriteria'),
+                            minimum_age=eligibility_module.get('minimumAge'),
+                            maximum_age=eligibility_module.get('maximumAge'),
+                            sex=eligibility_module.get('sex'),
+                            healthy_volunteers=eligibility_module.get('healthyVolunteers'),
+                            locations=[
+                                {
+                                    "facility": loc.get('facility'),
+                                    "city": loc.get('city'),
+                                    "state": loc.get('state'),
+                                    "country": loc.get('country'),
+                                    "zip": loc.get('zip'),
+                                }
+                                for loc in locations_module.get('locations', [])
+                            ],
+                            status=overall_status  # Pass status for recruitment check
+                        )
+
+                        # Manage trial entry based on its recruitment status
+                        manage_trial_entry(session, trial_data)
+
                         trial_bar.update(1)
 
                 # Update the URL with the next page token if available
                 page_token = data.get('nextPageToken')
-                if page_token:
-                    url = f"https://clinicaltrials.gov/api/v2/studies?pageToken={page_token}"
-                else:
-                    url = None  # Exit the loop
-                
-                # Update progress on the page fetching bar
+                url = f"https://clinicaltrials.gov/api/v2/studies?pageToken={page_token}" if page_token else None
+
                 page_bar.update(1)
-            
+
             except requests.exceptions.RequestException as e:
                 print(f"Request error encountered: {e}. Retrying...")
+
+
 
 def main():
     session = SessionLocal()
