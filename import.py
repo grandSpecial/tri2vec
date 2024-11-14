@@ -71,7 +71,13 @@ def upsert_clinical_trial(session, trial_data: ClinicalTrialCreate):
     )
     result = session.execute(stmt)
     session.flush()
-    return result.inserted_primary_key[0]  # Return the trial ID
+    
+    # Fetch the ID of the upserted or existing ClinicalTrial
+    if result.inserted_primary_key:
+        return result.inserted_primary_key[0]
+    else:
+        existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
+        return existing_trial.id if existing_trial else None
 
 # Function to upsert vector for clinical trial
 def upsert_trial_vector(session, trial_id, text):
@@ -86,28 +92,27 @@ def upsert_trial_vector(session, trial_id, text):
     session.execute(stmt)
     session.commit()
 
-# Modify manage_trial_entry to accept the trial's status directly
+# Manage trial entry and ensure it aligns with current recruiting status
 def manage_trial_entry(session, trial_data: ClinicalTrialCreate, overall_status: str):
-    # Check if the trial already exists
+    # Query for existing ClinicalTrial entry using string trial_id
     existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
     
     if existing_trial:
-        # If it exists and is recruiting, update it
         if overall_status == "RECRUITING":
-            trial_id = upsert_clinical_trial(session, trial_data)
-            upsert_trial_vector(session, trial_id, trial_data.description)
-        # If it exists but is not recruiting, delete from both tables
+            # Use existing_trial.id as the foreign key in TrialVector
+            upsert_trial_vector(session, existing_trial.id, trial_data.description)
         else:
-            session.query(TrialVector).filter_by(trial_id=existing_trial.trial_id).delete()
+            # Delete from TrialVector using the integer `id` from ClinicalTrial
+            session.query(TrialVector).filter_by(trial_id=existing_trial.id).delete()
             session.delete(existing_trial)
             session.commit()
     else:
-        # If it doesn’t exist and is recruiting, add it
         if overall_status == "RECRUITING":
+            # Upsert and use ClinicalTrial.id as the foreign key in TrialVector
             trial_id = upsert_clinical_trial(session, trial_data)
             upsert_trial_vector(session, trial_id, trial_data.description)
 
-# Updated function to fetch, process, and manage clinical trials
+# Function to fetch, process, and manage clinical trials from the API
 def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/api/v2/studies"):
     page_count = 0
     with tqdm(desc="Fetching pages", unit="page") as page_bar:
