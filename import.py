@@ -86,14 +86,14 @@ def upsert_trial_vector(session, trial_id, text):
     session.execute(stmt)
     session.commit()
 
-# Function to check and remove non-recruiting trials
-def manage_trial_entry(session, trial_data: ClinicalTrialCreate):
+# Modify manage_trial_entry to accept the trial's status directly
+def manage_trial_entry(session, trial_data: ClinicalTrialCreate, overall_status: str):
     # Check if the trial already exists
     existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
     
     if existing_trial:
         # If it exists and is recruiting, update it
-        if trial_data.status == "RECRUITING":
+        if overall_status == "RECRUITING":
             trial_id = upsert_clinical_trial(session, trial_data)
             upsert_trial_vector(session, trial_id, trial_data.description)
         # If it exists but is not recruiting, delete from both tables
@@ -103,7 +103,7 @@ def manage_trial_entry(session, trial_data: ClinicalTrialCreate):
             session.commit()
     else:
         # If it doesn’t exist and is recruiting, add it
-        if trial_data.status == "RECRUITING":
+        if overall_status == "RECRUITING":
             trial_id = upsert_clinical_trial(session, trial_data)
             upsert_trial_vector(session, trial_id, trial_data.description)
 
@@ -155,12 +155,11 @@ def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/a
                                     "zip": loc.get('zip'),
                                 }
                                 for loc in locations_module.get('locations', [])
-                            ],
-                            status=overall_status  # Pass status for recruitment check
+                            ]
                         )
 
-                        # Manage trial entry based on its recruitment status
-                        manage_trial_entry(session, trial_data)
+                        # Pass overall_status directly to manage_trial_entry
+                        manage_trial_entry(session, trial_data, overall_status)
 
                         trial_bar.update(1)
 
@@ -172,8 +171,6 @@ def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/a
 
             except requests.exceptions.RequestException as e:
                 print(f"Request error encountered: {e}. Retrying...")
-
-
 
 def main():
     session = SessionLocal()
