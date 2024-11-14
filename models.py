@@ -1,7 +1,8 @@
 from typing import Union, Optional
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, JSON, ForeignKey, create_engine
-from sqlalchemy.orm import relationship, sessionmaker, declarative_base, Mapped, mapped_column
+from sqlalchemy.orm import relationship, sessionmaker, Mapped, mapped_column
+from sqlalchemy.ext.declarative import declarative_base
 from pgvector.sqlalchemy import Vector
 import os
 from dotenv import load_dotenv
