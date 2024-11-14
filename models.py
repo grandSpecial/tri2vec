@@ -13,7 +13,6 @@ load_dotenv()
 Base = declarative_base()
 
 # Database setup
-# Database connection details
 DATABASE_URL = os.getenv('DATABASE_URL')
 # SQLalchemy only accepts urls like "postgresql://"
 # but heroku will not provide so we have to make it ourselves
