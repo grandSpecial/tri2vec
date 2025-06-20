@@ -51,6 +51,26 @@ class TrialVector(Base):
 
 ClinicalTrial.vector = relationship("TrialVector", uselist=False, back_populates="trial")
 
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    phone_number: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[Optional[str]] = mapped_column(String)
+    vector: Mapped[Optional[list[float]]] = mapped_column(Vector(1536))
+
+
+class SentNotification(Base):
+    __tablename__ = "sent_notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    trial_id: Mapped[int] = mapped_column(ForeignKey("clinical_trials.id"))
+    sent_at: Mapped[Optional[str]] = mapped_column(String)
+    user = relationship("User")
+    trial = relationship("ClinicalTrial")
+
 # Pydantic Models
 class ClinicalTrialCreate(BaseModel):
     trial_id: str
@@ -67,6 +87,11 @@ class ClinicalTrialCreate(BaseModel):
     sex: Optional[str] = None
     healthy_volunteers: Optional[Union[str, bool]] = None  # Allow str or bool
     locations: Optional[list] = None
+
+
+class UserCreate(BaseModel):
+    phone_number: str
+    description: str
 
 # Create the database tables if they don't already exist
 if __name__ == "__main__":

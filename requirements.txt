@@ -26,3 +26,4 @@ tqdm==4.66.5
 typing_extensions==4.12.2
 urllib3==2.2.3
 uvicorn==0.31.1
+twilio==9.0.1
