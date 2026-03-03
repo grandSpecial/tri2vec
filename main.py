@@ -65,10 +65,8 @@ ONBOARD_KEYWORDS = {"HELLO"}
 STATE_AWAITING_SYMPTOMS = "__AWAITING_SYMPTOMS__"
 STATE_AWAITING_LOCATION_PREFIX = "__AWAITING_LOCATION__::"
 HELP_TEXT = (
-    "HelloTrial help: text HELLO to start. "
-    "We'll ask for symptoms, then location. "
-    "Reply STOP to unsubscribe. "
-    "This is an automated informational service, not medical advice."
+    "Text HELLO to start. We'll ask for symptoms and location, then text matches. "
+    "Reply STOP to unsubscribe. Learn more: https://www.hellotrial.ca/about"
 )
 
 
@@ -361,11 +359,21 @@ async def twilio_sms_webhook(request: Request) -> Response:
             subscriber.active = True
             subscriber.scrubbed_message = profile_text
             subscriber.preference_vector = create_vector(profile_text)
+            matches = find_matching_trials(db, subscriber.preference_vector, settings.monitor_match_limit)
+
+            if matches:
+                unsent_matches = filter_unsent_trials(db, subscriber.id, matches)
+                immediate_matches = unsent_matches if unsent_matches else matches[:1]
+                if unsent_matches:
+                    record_notifications(db, subscriber.id, unsent_matches)
+                db.commit()
+                response.message(format_match_message(immediate_matches))
+                return Response(content=str(response), media_type="application/xml")
+
             db.commit()
             response.message(
-                "Thank you. We'll text you if we find anything. "
-                "Text HELP or STOP anytime to get information about how to use the service "
-                "or STOP to unsubscribe."
+                "Thank you. We don't have any matching trials yet, but we'll keep an eye out for you. "
+                "Text HELP or STOP anytime."
             )
             return Response(content=str(response), media_type="application/xml")
 
