@@ -1,0 +1,79 @@
+:root {
+  --bg: #eef4fb;
+  --paper: #ffffff;
+  --ink: #12324f;
+  --muted: #3d5974;
+  --line: #d2e0ec;
+  --link: #145b88;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Source Sans Pro", "Segoe UI", "Helvetica Neue", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(1200px 700px at 50% -10%, #fff 0, var(--bg) 58%, #e2ebf6 100%);
+}
+
+.wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 14px 28px;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(16, 45, 75, 0.08);
+  padding: 18px;
+}
+
+.kicker {
+  margin: 0;
+  color: #285375;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+h1 {
+  margin: 6px 0 8px;
+  font-size: clamp(1.6rem, 3.8vw, 2.5rem);
+  line-height: 1.1;
+}
+
+.lead {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+h2 {
+  margin: 16px 0 6px;
+  font-size: 1.2rem;
+}
+
+ol, ul {
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--link);
+}
+
+.back {
+  margin-top: 18px;
+  font-weight: 700;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: #eaf3fc;
+  border: 1px solid #c9dff2;
+  border-radius: 5px;
+  padding: 1px 4px;
+}

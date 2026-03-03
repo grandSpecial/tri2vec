@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>About HelloTrial</title>
+  <link rel="stylesheet" href="/static/about.css" />
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <p class="kicker">HelloTrial</p>
+      <h1>About, Safety, and Technical Transparency</h1>
+      <p class="lead">HelloTrial was built to make clinical trial discovery easier for real people using simple text messages.</p>
+
+      <section>
+        <h2>Why we made this</h2>
+        <p>Many people never find relevant studies because trial search tools can be hard to use. HelloTrial lowers that barrier by allowing anyone to start with a simple text conversation.</p>
+      </section>
+
+      <section>
+        <h2>How we built it</h2>
+        <p>HelloTrial uses a transparent SMS flow:</p>
+        <ol>
+          <li>Text <code>HELLO</code> to <strong>__DISPLAY_PHONE__</strong>.</li>
+          <li>HelloTrial asks for symptoms, then location.</li>
+          <li>Messages are scrubbed for obvious personally identifiable information patterns.</li>
+          <li>Scrubbed requests are matched against recruiting trial data.</li>
+          <li>HelloTrial sends links and optional follow-up alerts for new matches.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Safety and controls</h2>
+        <ul>
+          <li><code>STOP</code> unsubscribes immediately and deletes stored subscriber data.</li>
+          <li><code>HELP</code> returns usage and disclosure information.</li>
+          <li>Service explicitly states it is not medical advice.</li>
+          <li>Emergency guidance is provided: call 911 for emergencies.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Data handling</h2>
+        <ul>
+          <li>Phone number is stored to deliver SMS and support opt-out.</li>
+          <li>Scrubbed preference text and embedding are stored for matching.</li>
+          <li>No ad-tech integrations or data resale logic in this codebase.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>How it is auditable</h2>
+        <p>The full implementation is public and reviewable:</p>
+        <p><a href="__REPO_URL__" target="_blank" rel="noopener noreferrer">__REPO_URL__</a></p>
+        <p>Key transparency documents in the repo:</p>
+        <ul>
+          <li><a href="__REPO_URL__/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">ARCHITECTURE.md</a></li>
+          <li><a href="__REPO_URL__/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer">PRIVACY.md</a></li>
+          <li><a href="__REPO_URL__/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a></li>
+        </ul>
+      </section>
+
+      <p class="back"><a href="/">Back to patient page</a></p>
+    </article>
+  </main>
+</body>
+</html>

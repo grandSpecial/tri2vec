@@ -4,7 +4,7 @@ from typing import Any, Optional, Union
 from dotenv import load_dotenv
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel
-from sqlalchemy import JSON, ForeignKey, String, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint, create_engine, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -24,6 +24,11 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def ensure_pgvector_extension() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
 # SQLAlchemy Models
 class ClinicalTrial(Base):
@@ -55,6 +60,37 @@ class TrialVector(Base):
 
 ClinicalTrial.vector = relationship("TrialVector", uselist=False, back_populates="trial")
 
+
+class SubscriberProfile(Base):
+    __tablename__ = "subscriber_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    phone_e164: Mapped[str] = mapped_column(String, unique=True, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    scrubbed_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    preference_vector: Mapped[Optional[list[float]]] = mapped_column(Vector(1536), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    notifications = relationship("SubscriberNotification", back_populates="subscriber", cascade="all, delete-orphan")
+
+
+class SubscriberNotification(Base):
+    __tablename__ = "subscriber_notifications"
+    __table_args__ = (UniqueConstraint("subscriber_id", "trial_id", name="uq_subscriber_trial"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    subscriber_id: Mapped[int] = mapped_column(ForeignKey("subscriber_profiles.id"), index=True)
+    trial_id: Mapped[int] = mapped_column(ForeignKey("clinical_trials.id"), index=True)
+    sent_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    subscriber = relationship("SubscriberProfile", back_populates="notifications")
+    trial = relationship("ClinicalTrial")
+
 # Pydantic Models
 class ClinicalTrialCreate(BaseModel):
     trial_id: str
@@ -74,4 +110,5 @@ class ClinicalTrialCreate(BaseModel):
 
 # Create the database tables if they don't already exist
 if __name__ == "__main__":
+    ensure_pgvector_extension()
     Base.metadata.create_all(bind=engine)
