@@ -100,7 +100,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 ## Twilio Setup
 
 1. Configure an SMS-enabled number in Twilio.
-2. Set webhook URL to `https://<your-domain>/webhooks/twilio/sms` (POST).
+2. Set webhook URL to `https://hellotrial.ca/webhooks/twilio/sms` (POST).
 3. Add Twilio credentials to `.env`.
 
 ## SMS User Flow
@@ -132,17 +132,3 @@ Protected (`Authorization: Bearer <API_AUTH_TOKEN>`):
 - `GET /clinical_trial/{trial_id}`
 - `POST /admin/run_monitor`
 - `POST /admin/refresh_trials`
-
-## Operational Notes
-
-- `STOP` must immediately unsubscribe users.
-- This is informational software, not medical advice.
-- In emergencies users should call 911.
-
-## Publish-Ready Checklist
-
-1. Rotate credentials before going public.
-2. Verify `.env` is not tracked.
-3. Scan for secrets in files and history.
-4. Confirm legal/privacy language for your jurisdiction.
-5. Add issue templates and CI checks for contributors.
