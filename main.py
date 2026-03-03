@@ -61,12 +61,12 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 monitor_task: asyncio.Task | None = None
-ONBOARD_KEYWORDS = {"HELLO"}
+ONBOARD_KEYWORDS = {"HELLO", "START"}
 STATE_AWAITING_SYMPTOMS = "__AWAITING_SYMPTOMS__"
 STATE_AWAITING_LOCATION_PREFIX = "__AWAITING_LOCATION__::"
-INFO_TEXT = (
-    "Text HELLO to start. We'll ask for symptoms and location, then text matches. "
-    "Reply STOP to unsubscribe. Learn more: https://www.hellotrial.ca/about"
+SUPPORT_TEXT = (
+    "Text HELLO (or START) to start. We'll ask for symptoms and location, then text matches. "
+    "Learn more: https://www.hellotrial.ca/about"
 )
 
 
@@ -302,19 +302,19 @@ async def twilio_sms_webhook(request: Request) -> Response:
         return Response(content=str(response), media_type="application/xml")
 
     incoming_text = body.strip()
-    command = incoming_text.upper()
+    first_token = incoming_text.split(maxsplit=1)[0].strip(".,!?;:").upper() if incoming_text else ""
     db = SessionLocal()
     try:
         subscriber = get_or_create_subscriber(db, phone)
 
-        if command == "STOP":
+        if first_token == "STOP":
             purge_subscriber_data(db, subscriber)
             db.commit()
             response.message("You're unsubscribed. Thanks for using HelloTrial.")
             return Response(content=str(response), media_type="application/xml")
 
-        if command == "INFO":
-            response.message(INFO_TEXT)
+        if first_token in {"INFO", "HELP"}:
+            response.message(SUPPORT_TEXT)
             return Response(content=str(response), media_type="application/xml")
 
         if not incoming_text:
@@ -322,10 +322,10 @@ async def twilio_sms_webhook(request: Request) -> Response:
             return Response(content=str(response), media_type="application/xml")
 
         # New onboarding flow:
-        # 1) HELLO -> ask for symptoms
+        # 1) HELLO or START -> ask for symptoms
         # 2) symptoms -> ask for location
         # 3) location -> confirm subscription
-        if command in ONBOARD_KEYWORDS:
+        if first_token in ONBOARD_KEYWORDS:
             subscriber.active = True
             subscriber.preference_vector = None
             subscriber.scrubbed_message = STATE_AWAITING_SYMPTOMS

@@ -33,8 +33,11 @@
       <section>
         <h2>Safety and controls</h2>
         <ul>
-          <li><code>STOP</code> unsubscribes immediately and deletes stored subscriber data.</li>
-          <li><code>INFO</code> returns usage and disclosure information.</li>
+          <li><code>HELLO</code>: starts onboarding and asks for symptoms.</li>
+          <li><code>START</code>: starts or re-starts onboarding (recommended after STOP).</li>
+          <li><code>INFO</code>: returns support and usage information.</li>
+          <li><code>HELP</code>: supported keyword; response may be carrier/Twilio-managed depending on configuration.</li>
+          <li><code>STOP</code>: unsubscribes immediately and deletes stored subscriber data.</li>
           <li>Service explicitly states it is not medical advice.</li>
           <li>Emergency guidance is provided: call 911 for emergencies.</li>
         </ul>
