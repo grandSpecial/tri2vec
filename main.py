@@ -64,7 +64,7 @@ monitor_task: asyncio.Task | None = None
 ONBOARD_KEYWORDS = {"HELLO"}
 STATE_AWAITING_SYMPTOMS = "__AWAITING_SYMPTOMS__"
 STATE_AWAITING_LOCATION_PREFIX = "__AWAITING_LOCATION__::"
-HELP_TEXT = (
+INFO_TEXT = (
     "Text HELLO to start. We'll ask for symptoms and location, then text matches. "
     "Reply STOP to unsubscribe. Learn more: https://www.hellotrial.ca/about"
 )
@@ -313,8 +313,8 @@ async def twilio_sms_webhook(request: Request) -> Response:
             response.message("You're unsubscribed. Thanks for using HelloTrial.")
             return Response(content=str(response), media_type="application/xml")
 
-        if command == "HELP":
-            response.message(HELP_TEXT)
+        if command == "INFO":
+            response.message(INFO_TEXT)
             return Response(content=str(response), media_type="application/xml")
 
         if not incoming_text:
@@ -370,11 +370,11 @@ async def twilio_sms_webhook(request: Request) -> Response:
             db.commit()
             response.message(
                 "Thank you. We don't have any matching trials yet, but we'll keep an eye out for you. "
-                "Text HELP or STOP anytime."
+                "Text INFO or STOP anytime."
             )
             return Response(content=str(response), media_type="application/xml")
 
-        response.message("You are already subscribed. Text HELLO to update your symptoms and location, or HELP/STOP.")
+        response.message("You are already subscribed. Text HELLO to update your symptoms and location, or INFO/STOP.")
         return Response(content=str(response), media_type="application/xml")
     except Exception:
         db.rollback()
