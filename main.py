@@ -1,21 +1,27 @@
-import openai
-from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-from models import ClinicalTrial, TrialVector, SessionLocal  # Import your SQLAlchemy models and session
+import logging
 import os
+from typing import Any
+
 from dotenv import load_dotenv
-from pgvector.sqlalchemy import Vector
-from typing import List
-import numpy as np
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from openai import OpenAI
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from models import ClinicalTrial, SessionLocal, TrialVector
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # Security setup
 bearer_scheme = HTTPBearer()
 API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
-assert API_AUTH_TOKEN is not None
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not API_AUTH_TOKEN:
+    raise RuntimeError("Missing required environment variable: API_AUTH_TOKEN")
+if not OPENAI_API_KEY:
+    raise RuntimeError("Missing required environment variable: OPENAI_API_KEY")
 
 # Validate token dependency
 def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
@@ -23,17 +29,21 @@ def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sc
         raise HTTPException(status_code=401, detail="Invalid or missing token")
     return credentials
 
-app = FastAPI(dependencies=[Depends(validate_token)])
+app = FastAPI(
+    title="TRI2VEC",
+    description="Semantic search over recruiting clinical trials via pgvector embeddings.",
+    dependencies=[Depends(validate_token)],
+)
 
 # Initialize OpenAI API client
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Function to generate vectors using OpenAI
-def create_vector(text):
+def create_vector(text: str) -> list[float]:
     response = client.embeddings.create(
         input=text,
         model="text-embedding-3-small",
-        encoding_format="float"  
+        encoding_format="float",
     )
     return response.data[0].embedding
 
@@ -45,55 +55,66 @@ def get_db():
     finally:
         db.close()
 
+def serialize_trial(trial: ClinicalTrial) -> dict[str, Any]:
+    return {
+        "id": trial.id,
+        "trial_id": trial.trial_id,
+        "organization": trial.organization,
+        "brief_title": trial.brief_title,
+        "official_title": trial.official_title,
+        "description": trial.description,
+        "start_date": trial.start_date,
+        "primary_completion_date": trial.primary_completion_date,
+        "completion_date": trial.completion_date,
+        "eligibility_criteria": trial.eligibility_criteria,
+        "minimum_age": trial.minimum_age,
+        "maximum_age": trial.maximum_age,
+        "sex": trial.sex,
+        "healthy_volunteers": trial.healthy_volunteers,
+        "locations": trial.locations,
+    }
+
+
+@app.get("/healthz")
+def healthcheck() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/search_clinical_trials")
-def search_clinical_trial(text: str, limit: int = 10, db: Session = Depends(get_db)):
+def search_clinical_trial(
+    text: str,
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     # Generate vector from input text
     vector = create_vector(text)
-    
-    # Search for the closest vectors in the trial_vectors table, limited by the 'limit' parameter
+
     try:
-        closest_vector_entries = db.execute(
-            select(TrialVector).order_by(TrialVector.vector.l2_distance(vector)).limit(limit)
-        ).scalars().all()  # Fetch up to 'limit' closest entries
+        # Direct join avoids an additional query per match.
+        closest_trials = db.execute(
+            select(ClinicalTrial)
+            .join(TrialVector, TrialVector.trial_id == ClinicalTrial.id)
+            .order_by(TrialVector.vector.l2_distance(vector))
+            .limit(limit)
+        ).scalars().all()
 
-        if not closest_vector_entries:
+        if not closest_trials:
             raise HTTPException(status_code=404, detail="No matching trial vectors found")
-        
-        # Lookup corresponding ClinicalTrial rows by trial_id
-        clinical_trials = []
-        for entry in closest_vector_entries:
-            clinical_trial = db.query(ClinicalTrial).filter_by(id=entry.trial_id).first()
-            if clinical_trial:
-                clinical_trials.append({
-                    "id": clinical_trial.id,
-                    "trial_id": clinical_trial.trial_id,
-                    "organization": clinical_trial.organization,
-                    "brief_title": clinical_trial.brief_title,
-                    "official_title": clinical_trial.official_title,
-                    "description": clinical_trial.description,
-                    "start_date": clinical_trial.start_date,
-                    "primary_completion_date": clinical_trial.primary_completion_date,
-                    "completion_date": clinical_trial.completion_date,
-                    "eligibility_criteria": clinical_trial.eligibility_criteria,
-                    "minimum_age": clinical_trial.minimum_age,
-                    "maximum_age": clinical_trial.maximum_age,
-                    "sex": clinical_trial.sex,
-                    "healthy_volunteers": clinical_trial.healthy_volunteers,
-                    "locations": clinical_trial.locations
-                })
 
-        # If no clinical trials are found, raise an error
-        if not clinical_trials:
-            raise HTTPException(status_code=404, detail="No clinical trials found for matched vectors")
-
-        return clinical_trials
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error searching for clinical trial: {e}")
+        return [serialize_trial(trial) for trial in closest_trials]
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error while searching clinical trials")
+        raise HTTPException(status_code=500, detail="Internal error while searching clinical trials")
 
 # Endpoint to list all clinical trials with optional pagination
 @app.get("/clinical_trials/")
-def list_clinical_trials(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+def list_clinical_trials(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     trials = db.query(ClinicalTrial).offset(skip).limit(limit).all()
     if not trials:
         raise HTTPException(status_code=404, detail="No clinical trials found")

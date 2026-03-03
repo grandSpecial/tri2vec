@@ -1,11 +1,12 @@
-from typing import Union, Optional
-from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, JSON, ForeignKey, create_engine
-from sqlalchemy.orm import relationship, sessionmaker, Mapped, mapped_column
-from sqlalchemy.ext.declarative import declarative_base
-from pgvector.sqlalchemy import Vector
 import os
+from typing import Any, Optional, Union
+
 from dotenv import load_dotenv
+from pgvector.sqlalchemy import Vector
+from pydantic import BaseModel
+from sqlalchemy import JSON, ForeignKey, String, create_engine
+from sqlalchemy.orm import Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 
 load_dotenv()
 
@@ -14,6 +15,9 @@ Base = declarative_base()
 
 # Database setup
 DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError("Missing required environment variable: DATABASE_URL")
+
 # SQLalchemy only accepts urls like "postgresql://"
 # but heroku will not provide so we have to make it ourselves
 if DATABASE_URL.startswith("postgres://"):
@@ -27,19 +31,19 @@ class ClinicalTrial(Base):
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     trial_id: Mapped[str] = mapped_column(String, unique=True, index=True)
-    organization: Mapped[Optional[str]] = mapped_column(String)
-    brief_title: Mapped[Optional[str]] = mapped_column(String)
+    organization: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    brief_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     official_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    description: Mapped[Optional[str]] = mapped_column(String)
-    start_date: Mapped[Optional[str]] = mapped_column(String)
-    primary_completion_date: Mapped[Optional[str]] = mapped_column(String)
-    completion_date: Mapped[Optional[str]] = mapped_column(String)
-    eligibility_criteria: Mapped[Optional[str]] = mapped_column(String)
-    minimum_age: Mapped[Optional[str]] = mapped_column(String)
-    maximum_age: Mapped[Optional[str]] = mapped_column(String)
-    sex: Mapped[Optional[str]] = mapped_column(String)
-    healthy_volunteers: Mapped[Optional[Union[str, bool]]] = mapped_column(String)
-    locations: Mapped[Optional[dict]] = mapped_column(JSON)  # Store locations as JSON
+    description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    start_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    primary_completion_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    completion_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    eligibility_criteria: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    minimum_age: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    maximum_age: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sex: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    healthy_volunteers: Mapped[Optional[Union[str, bool]]] = mapped_column(String, nullable=True)
+    locations: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
 class TrialVector(Base):
     __tablename__ = 'trial_vectors'
@@ -66,7 +70,7 @@ class ClinicalTrialCreate(BaseModel):
     maximum_age: Optional[str] = None
     sex: Optional[str] = None
     healthy_volunteers: Optional[Union[str, bool]] = None  # Allow str or bool
-    locations: Optional[list] = None
+    locations: Optional[list[dict[str, Any]]] = None
 
 # Create the database tables if they don't already exist
 if __name__ == "__main__":

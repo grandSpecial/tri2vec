@@ -1,17 +1,23 @@
 import requests
-import json
-from openai import OpenAI
-from sqlalchemy.dialects.postgresql import insert
-from tqdm import tqdm
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from models import ClinicalTrial, TrialVector, SessionLocal, ClinicalTrialCreate
 import os
+from typing import Optional
+
 from dotenv import load_dotenv
+from openai import OpenAI
+from requests.adapters import HTTPAdapter
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+from tqdm import tqdm
+from urllib3.util.retry import Retry
+
+from models import ClinicalTrial, ClinicalTrialCreate, SessionLocal, TrialVector
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("Missing required environment variable: OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Configure retry strategy for network requests
 retry_strategy = Retry(
@@ -26,16 +32,16 @@ http = requests.Session()
 http.mount("https://", adapter)
 
 # Function to generate vectors using OpenAI
-def create_vector(text):
+def create_vector(text: str) -> list[float]:
     response = client.embeddings.create(
         input=text,
         model="text-embedding-3-small",
-        encoding_format="float"  
+        encoding_format="float",
     )
     return response.data[0].embedding
 
 # Function to upsert clinical trial details
-def upsert_clinical_trial(session, trial_data: ClinicalTrialCreate):
+def upsert_clinical_trial(session: Session, trial_data: ClinicalTrialCreate) -> int:
     stmt = insert(ClinicalTrial).values(
         trial_id=trial_data.trial_id,
         organization=trial_data.organization,
@@ -68,19 +74,14 @@ def upsert_clinical_trial(session, trial_data: ClinicalTrialCreate):
             'healthy_volunteers': insert(ClinicalTrial).excluded.healthy_volunteers,
             'locations': insert(ClinicalTrial).excluded.locations
         }
-    )
+    ).returning(ClinicalTrial.id)
     result = session.execute(stmt)
+    trial_id = result.scalar_one()
     session.flush()
-    
-    # Fetch the ID of the upserted or existing ClinicalTrial
-    if result.inserted_primary_key:
-        return result.inserted_primary_key[0]
-    else:
-        existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
-        return existing_trial.id if existing_trial else None
+    return trial_id
 
 # Function to upsert vector for clinical trial
-def upsert_trial_vector(session, trial_id, text):
+def upsert_trial_vector(session: Session, trial_id: int, text: str) -> None:
     vector = create_vector(text)
     stmt = insert(TrialVector).values(
         trial_id=trial_id,
@@ -90,30 +91,41 @@ def upsert_trial_vector(session, trial_id, text):
         set_={'vector': insert(TrialVector).excluded.vector}
     )
     session.execute(stmt)
-    session.commit()
+    session.flush()
+
+
+def build_embedding_text(trial_data: ClinicalTrialCreate) -> Optional[str]:
+    components = [
+        trial_data.brief_title,
+        trial_data.official_title,
+        trial_data.description,
+        trial_data.eligibility_criteria,
+    ]
+    text = "\n\n".join(part.strip() for part in components if part and part.strip())
+    return text or None
 
 # Manage trial entry and ensure it aligns with current recruiting status
-def manage_trial_entry(session, trial_data: ClinicalTrialCreate, overall_status: str):
+def manage_trial_entry(session: Session, trial_data: ClinicalTrialCreate, overall_status: Optional[str]) -> None:
     # Query for existing ClinicalTrial entry using string trial_id
     existing_trial = session.query(ClinicalTrial).filter_by(trial_id=trial_data.trial_id).first()
-    
-    if existing_trial:
-        if overall_status == "RECRUITING":
-            # Use existing_trial.id as the foreign key in TrialVector
-            upsert_trial_vector(session, existing_trial.id, trial_data.description)
-        else:
-            # Delete from TrialVector using the integer `id` from ClinicalTrial
+
+    if overall_status != "RECRUITING":
+        if existing_trial:
             session.query(TrialVector).filter_by(trial_id=existing_trial.id).delete()
             session.delete(existing_trial)
-            session.commit()
-    else:
-        if overall_status == "RECRUITING":
-            # Upsert and use ClinicalTrial.id as the foreign key in TrialVector
-            trial_id = upsert_clinical_trial(session, trial_data)
-            upsert_trial_vector(session, trial_id, trial_data.description)
+            session.flush()
+        return
+
+    trial_id = upsert_clinical_trial(session, trial_data)
+    embedding_text = build_embedding_text(trial_data)
+    if embedding_text:
+        upsert_trial_vector(session, trial_id, embedding_text)
 
 # Function to fetch, process, and manage clinical trials from the API
-def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/api/v2/studies"):
+def fetch_and_process_clinical_trials(
+    session: Session,
+    url: str = "https://clinicaltrials.gov/api/v2/studies",
+) -> None:
     page_count = 0
     with tqdm(desc="Fetching pages", unit="page") as page_bar:
         while url:
@@ -163,7 +175,10 @@ def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/a
                             ]
                         )
 
-                        # Pass overall_status directly to manage_trial_entry
+                        if not trial_data.trial_id:
+                            trial_bar.update(1)
+                            continue
+
                         manage_trial_entry(session, trial_data, overall_status)
 
                         trial_bar.update(1)
@@ -171,17 +186,23 @@ def fetch_and_process_clinical_trials(session, url="https://clinicaltrials.gov/a
                 # Update the URL with the next page token if available
                 page_token = data.get('nextPageToken')
                 url = f"https://clinicaltrials.gov/api/v2/studies?pageToken={page_token}" if page_token else None
+                session.commit()
 
                 page_bar.update(1)
 
             except requests.exceptions.RequestException as e:
                 print(f"Request error encountered: {e}. Retrying...")
+            except Exception:
+                session.rollback()
+                raise
 
 def main():
     session = SessionLocal()
-    fetch_and_process_clinical_trials(session)
-    session.commit()
-    session.close()
+    try:
+        fetch_and_process_clinical_trials(session)
+        session.commit()
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     main()
