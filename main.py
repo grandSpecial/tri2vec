@@ -168,7 +168,7 @@ def purge_subscriber_data(db: Session, subscriber: SubscriberProfile) -> None:
 
 def format_match_message(trial: ClinicalTrial) -> str:
     title = trial.brief_title or trial.official_title or trial.trial_id
-    return f"{title}: {trial_link(trial)}\nReply STOP to unsubscribe."
+    return f"{title}: {trial_link(trial)}\n\nReply STOP to unsubscribe."
 
 
 def send_sms(to_phone: str, body: str) -> None:
