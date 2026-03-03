@@ -166,13 +166,9 @@ def purge_subscriber_data(db: Session, subscriber: SubscriberProfile) -> None:
     db.delete(subscriber)
 
 
-def format_match_message(trials: list[ClinicalTrial]) -> str:
-    lines = ["Trials you might like:"]
-    for trial in trials:
-        title = trial.brief_title or trial.official_title or trial.trial_id
-        lines.append(f"- {title}: {trial_link(trial)}")
-    lines.append("Reply STOP to unsubscribe.")
-    return "\n".join(lines)
+def format_match_message(trial: ClinicalTrial) -> str:
+    title = trial.brief_title or trial.official_title or trial.trial_id
+    return f"{title}: {trial_link(trial)}\nReply STOP to unsubscribe."
 
 
 def send_sms(to_phone: str, body: str) -> None:
@@ -205,8 +201,9 @@ def run_monitoring_cycle() -> None:
             if not unsent:
                 continue
 
-            send_sms(subscriber.phone_e164, format_match_message(unsent))
-            record_notifications(db, subscriber.id, unsent)
+            top_trial = unsent[0]
+            send_sms(subscriber.phone_e164, format_match_message(top_trial))
+            record_notifications(db, subscriber.id, [top_trial])
             db.commit()
     except Exception:
         db.rollback()
@@ -363,11 +360,11 @@ async def twilio_sms_webhook(request: Request) -> Response:
 
             if matches:
                 unsent_matches = filter_unsent_trials(db, subscriber.id, matches)
-                immediate_matches = unsent_matches if unsent_matches else matches[:1]
+                immediate_trial = unsent_matches[0] if unsent_matches else matches[0]
                 if unsent_matches:
-                    record_notifications(db, subscriber.id, unsent_matches)
+                    record_notifications(db, subscriber.id, [immediate_trial])
                 db.commit()
-                response.message(format_match_message(immediate_matches))
+                response.message(format_match_message(immediate_trial))
                 return Response(content=str(response), media_type="application/xml")
 
             db.commit()
