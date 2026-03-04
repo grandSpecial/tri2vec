@@ -29,7 +29,7 @@ Read more:
 - Ingests recruiting studies from ClinicalTrials.gov
 - Generates embeddings with OpenAI (`text-embedding-3-small`)
 - Uses PostgreSQL + pgvector nearest-neighbor matching
-- Handles SMS via Twilio (`HELLO`, `STOP`, `INFO`)
+- Handles SMS via Twilio (`HELLO`, `START`, `MENU`, `STOP`)
 - Sends follow-up alerts for newly matched trials
 - Includes a clinic-friendly landing page poster at `/`
 

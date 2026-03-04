@@ -67,8 +67,8 @@ STATE_AWAITING_SYMPTOMS = "__AWAITING_SYMPTOMS__"
 STATE_AWAITING_LOCATION_PREFIX = "__AWAITING_LOCATION__::"
 DAILY_ALERT_HOUR_UTC = 12
 SUPPORT_TEXT = (
-    "Text HELLO (or START) to start. We'll ask for symptoms and location, then text matches. "
-    "Learn more: https://www.hellotrial.ca/about"
+    "HelloTrial support: Text START to begin or re-start your trial search. "
+    "Text STOP anytime to unsubscribe. Learn more: https://www.hellotrial.ca/about"
 )
 
 
@@ -356,7 +356,7 @@ async def twilio_sms_webhook(request: Request) -> Response:
             response.message("You're unsubscribed. Thanks for using HelloTrial.")
             return Response(content=str(response), media_type="application/xml")
 
-        if first_token in {"INFO", "HELP"}:
+        if first_token == "MENU":
             response.message(SUPPORT_TEXT)
             return Response(content=str(response), media_type="application/xml")
 
@@ -404,7 +404,7 @@ async def twilio_sms_webhook(request: Request) -> Response:
 
             followup_message = (
                 "We don't have any matching trials yet, but we'll keep an eye out for you. "
-                "Text INFO or STOP anytime."
+                "Text MENU or STOP anytime."
             )
             if unsent_matches:
                 best_trial = unsent_matches[0]
@@ -416,7 +416,7 @@ async def twilio_sms_webhook(request: Request) -> Response:
             asyncio.create_task(send_followup_sms_after_delay(phone, followup_message, delay_seconds=10))
             return Response(content=str(response), media_type="application/xml")
 
-        response.message("You are already subscribed. Text HELLO to update your symptoms and location, or INFO/STOP.")
+        response.message("You are already subscribed. Text HELLO to update your symptoms and location, or MENU/STOP.")
         return Response(content=str(response), media_type="application/xml")
     except Exception:
         db.rollback()

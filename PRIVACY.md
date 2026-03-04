@@ -30,7 +30,7 @@ This is pattern-based and not a perfect anonymization guarantee.
 
 - `STOP`: unsubscribe and delete stored subscriber data (phone, scrubbed profile, and notification history)
 - `HELLO`: start or re-start onboarding
-- `INFO`: receive usage and disclosure text
+- `MENU`: receive quick usage and disclosure text
 
 ## Data Sharing
 
