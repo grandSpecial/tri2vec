@@ -3,6 +3,7 @@ import contextlib
 import importlib
 import logging
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -64,6 +65,7 @@ monitor_task: asyncio.Task | None = None
 ONBOARD_KEYWORDS = {"HELLO", "START"}
 STATE_AWAITING_SYMPTOMS = "__AWAITING_SYMPTOMS__"
 STATE_AWAITING_LOCATION_PREFIX = "__AWAITING_LOCATION__::"
+DAILY_ALERT_HOUR_UTC = 12
 SUPPORT_TEXT = (
     "Text HELLO (or START) to start. We'll ask for symptoms and location, then text matches. "
     "Learn more: https://www.hellotrial.ca/about"
@@ -171,6 +173,16 @@ def format_match_message(trial: ClinicalTrial) -> str:
     return f"{title}: {trial_link(trial)}\n\nReply STOP to unsubscribe."
 
 
+def format_daily_match_message(trials: list[ClinicalTrial]) -> str:
+    lines = []
+    for idx, trial in enumerate(trials, start=1):
+        title = trial.brief_title or trial.official_title or trial.trial_id
+        lines.append(f"{idx}. {title}: {trial_link(trial)}")
+    lines.append("")
+    lines.append("Reply STOP to unsubscribe.")
+    return "\n".join(lines)
+
+
 def send_sms(to_phone: str, body: str) -> None:
     if not settings.twilio_enabled or twilio_client is None:
         logger.info("Twilio disabled; skipping SMS send to %s", to_phone)
@@ -183,8 +195,36 @@ def send_sms(to_phone: str, body: str) -> None:
     )
 
 
+async def send_followup_sms_after_delay(to_phone: str, body: str, delay_seconds: int = 10) -> None:
+    await asyncio.sleep(delay_seconds)
+    send_sms(to_phone, body)
+
+
+def is_daily_dispatch_window(now_utc: datetime) -> bool:
+    return now_utc.hour == DAILY_ALERT_HOUR_UTC
+
+
+def subscriber_has_notification_today(db: Session, subscriber_id: int, now_utc: datetime) -> bool:
+    day_start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+    existing = (
+        db.query(SubscriberNotification.id)
+        .filter(
+            SubscriberNotification.subscriber_id == subscriber_id,
+            SubscriberNotification.sent_at >= day_start,
+            SubscriberNotification.sent_at < day_end,
+        )
+        .first()
+    )
+    return existing is not None
+
+
 def run_monitoring_cycle() -> None:
     if not settings.twilio_enabled:
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    if not is_daily_dispatch_window(now_utc):
         return
 
     db = SessionLocal()
@@ -196,14 +236,17 @@ def run_monitoring_cycle() -> None:
         )
 
         for subscriber in subscribers:
+            if subscriber_has_notification_today(db, subscriber.id, now_utc):
+                continue
+
             matches = find_matching_trials(db, subscriber.preference_vector, settings.monitor_match_limit * 4)
             unsent = filter_unsent_trials(db, subscriber.id, matches)[: settings.monitor_match_limit]
             if not unsent:
                 continue
 
-            top_trial = unsent[0]
-            send_sms(subscriber.phone_e164, format_match_message(top_trial))
-            record_notifications(db, subscriber.id, [top_trial])
+            top_three = unsent[:3]
+            send_sms(subscriber.phone_e164, format_daily_match_message(top_three))
+            record_notifications(db, subscriber.id, top_three)
             db.commit()
     except Exception:
         db.rollback()
@@ -357,21 +400,20 @@ async def twilio_sms_webhook(request: Request) -> Response:
             subscriber.scrubbed_message = profile_text
             subscriber.preference_vector = create_vector(profile_text)
             matches = find_matching_trials(db, subscriber.preference_vector, settings.monitor_match_limit)
+            unsent_matches = filter_unsent_trials(db, subscriber.id, matches)
 
-            if matches:
-                unsent_matches = filter_unsent_trials(db, subscriber.id, matches)
-                immediate_trial = unsent_matches[0] if unsent_matches else matches[0]
-                if unsent_matches:
-                    record_notifications(db, subscriber.id, [immediate_trial])
-                db.commit()
-                response.message(format_match_message(immediate_trial))
-                return Response(content=str(response), media_type="application/xml")
-
-            db.commit()
-            response.message(
-                "Thank you. We don't have any matching trials yet, but we'll keep an eye out for you. "
+            followup_message = (
+                "We don't have any matching trials yet, but we'll keep an eye out for you. "
                 "Text INFO or STOP anytime."
             )
+            if unsent_matches:
+                best_trial = unsent_matches[0]
+                record_notifications(db, subscriber.id, [best_trial])
+                followup_message = format_match_message(best_trial)
+
+            db.commit()
+            response.message("Thanks for subscribing. Keep an eye out for trial updates as they come up.")
+            asyncio.create_task(send_followup_sms_after_delay(phone, followup_message, delay_seconds=10))
             return Response(content=str(response), media_type="application/xml")
 
         response.message("You are already subscribed. Text HELLO to update your symptoms and location, or INFO/STOP.")
