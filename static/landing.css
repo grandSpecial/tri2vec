@@ -81,6 +81,11 @@ h1 {
   color: #ffcd85;
 }
 
+.sms-link {
+  color: inherit;
+  text-decoration: none;
+}
+
 .quick-help {
   margin: 10px 0 6px;
   color: #2e4d69;
